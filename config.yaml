@@ -1,0 +1,28 @@
+model:
+  type: "xgboost"
+  horizon_jours: 14
+  retrain_frequence: "weekly"
+  test_year: 2024
+
+seuils_alerte:
+  attention: 0.30
+  critique: 0.60
+
+use_cases:
+  supermarche:
+    base_ca_mensuel: 36000000
+    nb_employes_normal: 12
+    nb_caisses_normal: 5
+  restaurant:
+    couverts_normal: 80
+    prix_moyen_couvert: 4500
+  mobile_money:
+    float_minimum: 200000
+    float_pic: 750000
+  grossiste:
+    nb_camions_normal: 3
+
+pays:
+  code: "SN"
+  devise: "FCFA"
+  langue: "fr"
