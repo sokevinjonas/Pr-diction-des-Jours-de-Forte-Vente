@@ -29,6 +29,9 @@ Thumbs.db
 # Claude
 .claude/
 
+# Logs
+logs/
+
 # Clés API
 kaggle.json
 data/external/kaggle_store_sales/
