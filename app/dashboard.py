@@ -278,6 +278,126 @@ section[data-testid="stSidebar"] {
     background: #ffffff;
     border-right: 1px solid var(--border);
 }
+
+/* ===== MODE SIMPLE ===== */
+
+.simple-header {
+    background: linear-gradient(135deg, #1b5e20 0%, #2e7d32 100%);
+    padding: 24px;
+    border-radius: var(--radius);
+    margin-bottom: 24px;
+    color: white;
+    text-align: center;
+}
+
+.simple-header h1 {
+    margin: 0;
+    font-size: 1.4rem;
+    font-weight: 700;
+}
+
+.simple-header p {
+    margin: 8px 0 0;
+    font-size: 0.95rem;
+    opacity: 0.9;
+}
+
+/* Calendrier visuel */
+.day-card {
+    border-radius: 16px;
+    padding: 20px 16px;
+    text-align: center;
+    margin-bottom: 12px;
+    transition: transform 0.2s;
+    border: 2px solid transparent;
+}
+
+.day-card:hover {
+    transform: scale(1.02);
+}
+
+.day-card.vert {
+    background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+    border-color: #a5d6a7;
+}
+
+.day-card.orange {
+    background: linear-gradient(135deg, #fff3e0, #ffe0b2);
+    border-color: #ffcc80;
+}
+
+.day-card.rouge {
+    background: linear-gradient(135deg, #ffebee, #ffcdd2);
+    border-color: #ef9a9a;
+}
+
+.day-icon {
+    font-size: 2.8rem;
+    margin-bottom: 8px;
+}
+
+.day-name {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.day-date {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+}
+
+.day-message {
+    font-size: 0.95rem;
+    font-weight: 500;
+    line-height: 1.4;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.7);
+}
+
+.day-action {
+    margin-top: 10px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 20px;
+    display: inline-block;
+}
+
+.day-action.vert { background: #c8e6c9; color: #1b5e20; }
+.day-action.orange { background: #ffe0b2; color: #e65100; }
+.day-action.rouge { background: #ffcdd2; color: #b71c1c; }
+
+/* Résumé simple */
+.simple-summary {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin: 20px 0;
+    text-align: center;
+}
+
+.simple-summary h2 {
+    font-size: 1.2rem;
+    margin: 0 0 12px;
+    color: var(--text-primary);
+}
+
+.simple-summary .big-number {
+    font-size: 2.2rem;
+    font-weight: 800;
+    color: var(--primary);
+}
+
+.simple-summary .caption {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
 </style>
 """
 
@@ -320,6 +440,152 @@ def show_loading(message, detail=""):
             </div>
         </div>
     """, unsafe_allow_html=True)
+
+
+def show_simple_view(df_forecast, use_case, config):
+    """
+    Mode Simple — Vue visuelle pour commerçants.
+    Calendrier avec feux tricolores, icônes, messages courts.
+    """
+    # Header simple
+    st.markdown("""
+        <div class="simple-header">
+            <h1>Vos Ventes Cette Semaine</h1>
+            <p>Les jours en rouge = beaucoup de clients. Preparez-vous !</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Résumé en gros
+    nb_jours_forts = int((df_forecast["niveau_alerte"] != "NORMAL").sum())
+    total_jours = len(df_forecast)
+
+    if nb_jours_forts == 0:
+        resume_icon = "&#9996;"
+        resume_text = "Semaine tranquille"
+        resume_detail = "Pas de jour exceptionnel prevu. Fonctionnez normalement."
+    elif nb_jours_forts <= 2:
+        resume_icon = "&#9888;"
+        resume_text = f"{nb_jours_forts} jour(s) fort(s)"
+        resume_detail = "Preparez du stock supplementaire pour ces jours."
+    else:
+        resume_icon = "&#128293;"
+        resume_text = f"{nb_jours_forts} jours forts !"
+        resume_detail = "Semaine chargee. Appelez du personnel en renfort."
+
+    st.markdown(f"""
+        <div class="simple-summary">
+            <div style="font-size: 3rem;">{resume_icon}</div>
+            <h2>{resume_text}</h2>
+            <div class="caption">{resume_detail}</div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Calendrier visuel — une carte par jour
+    # Afficher 7 jours max dans une grille
+    jours_a_afficher = min(7, len(df_forecast))
+    cols = st.columns(jours_a_afficher)
+
+    for i, (_, row) in enumerate(df_forecast.head(jours_a_afficher).iterrows()):
+        alerte = row["niveau_alerte"]
+
+        if alerte == "ROUGE":
+            css_class = "rouge"
+            icon = "&#128680;"  # sirène
+            message = "Beaucoup de monde !"
+            action = "Preparez plus"
+        elif alerte == "ORANGE":
+            css_class = "orange"
+            icon = "&#128200;"  # graphique hausse
+            message = "Plus que d'habitude"
+            action = "Verifiez le stock"
+        else:
+            css_class = "vert"
+            icon = "&#9989;"  # check vert
+            message = "Journee normale"
+            action = "Tout est bon"
+
+        with cols[i]:
+            st.markdown(f"""
+                <div class="day-card {css_class}">
+                    <div class="day-icon">{icon}</div>
+                    <div class="day-name">{row['jour']}</div>
+                    <div class="day-date">{row['date']}</div>
+                    <div class="day-message">{message}</div>
+                    <div class="day-action {css_class}">{action}</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Conseils concrets en dessous
+    st.markdown('<div class="section-card">', unsafe_allow_html=True)
+    st.markdown("### Ce que vous devez faire")
+
+    alertes = df_forecast[df_forecast["niveau_alerte"] != "NORMAL"]
+
+    if alertes.empty:
+        st.markdown("""
+            <div style="text-align: center; padding: 20px; color: var(--success);">
+                <p style="font-size: 1.1rem;">Rien de special a preparer cette semaine.</p>
+                <p>Gardez votre stock habituel.</p>
+            </div>
+        """, unsafe_allow_html=True)
+    else:
+        uc_config = config["use_cases"].get(use_case, {})
+
+        for _, row in alertes.iterrows():
+            reco = row.get("recommandations", {})
+            if isinstance(reco, str):
+                import ast
+                try:
+                    reco = ast.literal_eval(reco)
+                except:
+                    reco = {}
+
+            conseils = []
+
+            if use_case == "supermarche":
+                conseils.append("Commandez plus de marchandise pour ce jour")
+                if reco.get("personnel_extra", 0) > 0:
+                    conseils.append(f"Appelez {reco['personnel_extra']} personnes en plus")
+                if reco.get("caisses_recommandees"):
+                    conseils.append(f"Ouvrez {reco['caisses_recommandees']} caisses")
+
+            elif use_case == "restaurant":
+                conseils.append("Preparez plus de nourriture")
+                if reco.get("couverts_prevus"):
+                    conseils.append(f"Prevoyez {reco['couverts_prevus']} couverts")
+                if reco.get("personnel_extra", 0) > 0:
+                    conseils.append(f"Appelez {reco['personnel_extra']} extras")
+
+            elif use_case == "mobile_money":
+                conseils.append("Gardez plus d'argent en caisse (float)")
+                if reco.get("float_recommande"):
+                    conseils.append(f"Float recommande : {reco['float_recommande']:,.0f} FCFA")
+
+            elif use_case == "grossiste":
+                conseils.append("Prevoyez plus de livraisons")
+                if reco.get("camions_recommandes"):
+                    conseils.append(f"Utilisez {reco['camions_recommandes']} camions")
+
+            if not conseils:
+                conseils.append("Preparez plus de stock que d'habitude")
+
+            badge_color = "#ffebee" if row["niveau_alerte"] == "ROUGE" else "#fff3e0"
+            emoji = "&#128308;" if row["niveau_alerte"] == "ROUGE" else "&#128992;"
+
+            st.markdown(f"""
+                <div style="background: {badge_color}; border-radius: 12px; padding: 16px; margin-bottom: 12px;">
+                    <div style="font-weight: 700; font-size: 1rem;">
+                        {emoji} {row['jour']} {row['date']}
+                    </div>
+                    <ul style="margin: 8px 0 0; padding-left: 20px;">
+                        {''.join(f'<li style="margin: 4px 0; font-size: 0.95rem;">{c}</li>' for c in conseils)}
+                    </ul>
+                </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def show_column_mapping(df_raw):
@@ -413,6 +679,15 @@ def main():
 
     # --- Sidebar ---
     with st.sidebar:
+        st.markdown("### Mode d'affichage")
+        mode = st.radio(
+            "Choisir le mode",
+            ["Simple", "Expert"],
+            horizontal=True,
+            help="Simple = vue visuelle pour commercants | Expert = tableaux et graphiques detailles",
+        )
+
+        st.markdown("---")
         st.markdown("### Donnees")
         uploaded_file = st.file_uploader(
             "Importer vos donnees",
@@ -562,6 +837,13 @@ def main():
         return
 
     loading_placeholder.empty()
+
+    # --- Aiguillage : Mode Simple ou Expert ---
+    if mode == "Simple":
+        show_simple_view(df_forecast, use_case, config)
+        return
+
+    # ===== MODE EXPERT (ci-dessous) =====
 
     # --- KPIs ---
     nb_alertes_rouge = int((df_forecast["niveau_alerte"] == "ROUGE").sum())
