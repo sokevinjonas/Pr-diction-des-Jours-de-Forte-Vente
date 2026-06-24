@@ -1,0 +1,137 @@
+{
+  "supermarche": {
+    "mape_ensemble": 14.81,
+    "mape_xgb": 15.4,
+    "mape_lgb": 14.88,
+    "mae": 260317,
+    "recall_pics": 0.0,
+    "precision_pics": 0.0,
+    "top_features": [
+      "mois_sin",
+      "mois",
+      "jour_mois",
+      "jour_annee",
+      "temperature_min"
+    ]
+  },
+  "restaurant": {
+    "mape_ensemble": 19.43,
+    "mape_xgb": 19.36,
+    "mape_lgb": 20.36,
+    "mae": 103004,
+    "recall_pics": 37.5,
+    "precision_pics": 23.1,
+    "top_features": [
+      "mois_sin",
+      "jour_mois",
+      "jour_annee",
+      "ventes_j_14",
+      "temperature_max"
+    ]
+  },
+  "mobile_money": {
+    "mape_ensemble": 22.14,
+    "mape_xgb": 22.18,
+    "mape_lgb": 22.33,
+    "mae": 60334,
+    "recall_pics": 0.0,
+    "precision_pics": 0.0,
+    "top_features": [
+      "mois",
+      "mois_sin",
+      "jour_annee",
+      "jour_mois",
+      "temperature_max"
+    ]
+  },
+  "grossiste": {
+    "mape_ensemble": 25.85,
+    "mape_xgb": 26.55,
+    "mape_lgb": 25.8,
+    "mae": 1292421,
+    "recall_pics": 0.0,
+    "precision_pics": 0.0,
+    "top_features": [
+      "mois_sin",
+      "mois",
+      "temperature_max",
+      "ventes_j_28",
+      "ventes_j_14"
+    ]
+  },
+  "equateur_magasin_3": {
+    "mape_ensemble": 16.56,
+    "mape_xgb": 16.43,
+    "mape_lgb": 16.72,
+    "mae": 4065579,
+    "recall_pics": 6.2,
+    "precision_pics": 25.0,
+    "top_features": [
+      "nb_jours_avant_fete",
+      "jour_mois",
+      "ventes_moy_14j",
+      "ventes_std_30j",
+      "ratio_j7_vs_moy"
+    ]
+  },
+  "equateur_magasin_44": {
+    "mape_ensemble": 20.51,
+    "mape_xgb": 21.83,
+    "mape_lgb": 19.76,
+    "mae": 5860532,
+    "recall_pics": 8.7,
+    "precision_pics": 22.2,
+    "top_features": [
+      "nb_jours_avant_fete",
+      "jour_mois",
+      "ventes_j_2",
+      "ventes_moy_14j",
+      "ratio_j7_vs_moy"
+    ]
+  },
+  "equateur_magasin_45": {
+    "mape_ensemble": 33.53,
+    "mape_xgb": 33.5,
+    "mape_lgb": 33.74,
+    "mae": 5648968,
+    "recall_pics": 17.4,
+    "precision_pics": 57.1,
+    "top_features": [
+      "nb_jours_avant_fete",
+      "jour_mois",
+      "ventes_moy_14j",
+      "ventes_j_2",
+      "ratio_j7_vs_moy"
+    ]
+  },
+  "equateur_magasin_47": {
+    "mape_ensemble": 19.95,
+    "mape_xgb": 21.02,
+    "mape_lgb": 19.62,
+    "mae": 5181441,
+    "recall_pics": 9.1,
+    "precision_pics": 66.7,
+    "top_features": [
+      "nb_jours_avant_fete",
+      "est_debut_mois",
+      "jour_mois",
+      "ratio_j7_vs_moy",
+      "ventes_moy_14j"
+    ]
+  },
+  "equateur_magasin_49": {
+    "mape_ensemble": 15.97,
+    "mape_xgb": 16.5,
+    "mape_lgb": 16.12,
+    "mae": 3798196,
+    "recall_pics": 25.0,
+    "precision_pics": 57.1,
+    "top_features": [
+      "nb_jours_avant_fete",
+      "ventes_moy_14j",
+      "jour_mois",
+      "ventes_j_2",
+      "ventes_std_30j"
+    ]
+  }
+}

@@ -100,6 +100,10 @@ def add_features_lag(df, target_col="montant_total"):
     df["ventes_j_2"] = df[target_col].shift(2)
     df["ventes_j_7"] = df[target_col].shift(7)
     df["ventes_j_14"] = df[target_col].shift(14)
+    df["ventes_j_28"] = df[target_col].shift(28)
+
+    # Même jour l'année passée (approximation 364 jours = 52 semaines)
+    df["ventes_an_passe"] = df[target_col].shift(364)
 
     # Moyennes glissantes
     df["ventes_moy_7j"] = df[target_col].shift(1).rolling(window=7, min_periods=1).mean()
@@ -108,6 +112,7 @@ def add_features_lag(df, target_col="montant_total"):
 
     # Écart-type glissant (volatilité récente)
     df["ventes_std_7j"] = df[target_col].shift(1).rolling(window=7, min_periods=1).std()
+    df["ventes_std_30j"] = df[target_col].shift(1).rolling(window=30, min_periods=7).std()
 
     # Tendance sur 7 jours (pente)
     df["tendance_7j"] = df[target_col].shift(1).rolling(window=7, min_periods=3).apply(
@@ -115,17 +120,22 @@ def add_features_lag(df, target_col="montant_total"):
         raw=True
     )
 
-    # Ratio par rapport à la moyenne (détecte les anomalies)
+    # Ratios (détecte les anomalies et cycles)
     df["ratio_vs_moy_30j"] = df[target_col].shift(1) / df["ventes_moy_30j"]
+    df["ratio_j7_vs_moy"] = df["ventes_j_7"] / df["ventes_moy_30j"]
 
     return df
 
 
-def build_features(df, target_col="montant_total"):
+def build_features(df, target_col="montant_total", with_meteo=False, pays="SN"):
     """Pipeline complet de feature engineering."""
     df = add_features_temporelles(df)
     df = add_features_evenements(df)
     df = add_features_lag(df, target_col=target_col)
+
+    if with_meteo:
+        from src.meteo import get_meteo_features
+        df = get_meteo_features(df, pays=pays)
 
     # Supprimer les premières lignes sans lag suffisant
     df = df.dropna(subset=["ventes_j_14"]).reset_index(drop=True)
@@ -142,6 +152,11 @@ def get_feature_columns():
         "est_jour_ferie", "veille_ferie",
         "nb_jours_avant_fete", "nb_jours_apres_fete",
         "ventes_j_1", "ventes_j_2", "ventes_j_7", "ventes_j_14",
+        "ventes_j_28", "ventes_an_passe",
         "ventes_moy_7j", "ventes_moy_14j", "ventes_moy_30j",
-        "ventes_std_7j", "tendance_7j", "ratio_vs_moy_30j",
+        "ventes_std_7j", "ventes_std_30j",
+        "tendance_7j", "ratio_vs_moy_30j", "ratio_j7_vs_moy",
+        # Météo
+        "temperature_max", "temperature_min", "precipitation_mm",
+        "pluie_forte", "chaleur_extreme", "est_hivernage",
     ]
