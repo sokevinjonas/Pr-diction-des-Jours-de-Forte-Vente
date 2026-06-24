@@ -1,6 +1,6 @@
 """
-Module de prédiction : génère les prévisions et recommandations.
-Produit un JSON structuré avec alertes et actions concrètes.
+Module de prédiction auto-adaptatif.
+Se réentraîne automatiquement si les données importées sont nouvelles.
 """
 
 import pandas as pd
@@ -10,33 +10,39 @@ from datetime import datetime, timedelta
 
 from src.utils import PROJECT_ROOT, load_config, niveau_alerte
 from src.data_loader import load_ventes
-from src.feature_engineering import build_features, add_features_temporelles, add_features_evenements
+from src.feature_engineering import build_features
+from src.model import auto_train_if_needed, MODELS_DIR
 
 
-MODELS_DIR = PROJECT_ROOT / "models"
-
-
-def predict_next_days(horizon=7, use_case="supermarche", filepath=None):
+def predict_next_days(horizon=7, use_case="supermarche", filepath=None, df_input=None):
     """
     Prédit les ventes pour les N prochains jours.
-
-    Retourne un DataFrame avec : date, prediction, variation, niveau_alerte, message.
+    Accepte : un use_case par défaut, un filepath, ou un DataFrame déjà chargé.
     """
     config = load_config()
     seuils = config["seuils_alerte"]
 
-    # Charger le modèle
-    model_data = joblib.load(MODELS_DIR / "xgboost_model.pkl")
+    # Charger les données
+    if df_input is not None:
+        df_hist = df_input.copy()
+    else:
+        df_hist = load_ventes(use_case=use_case, filepath=filepath)
+
+    if len(df_hist) < 14:
+        raise ValueError(
+            f"Pas assez de donnees ({len(df_hist)} jours). "
+            f"Le modele a besoin d'au moins 14 jours d'historique."
+        )
+
+    # Auto-entraînement si les données ne correspondent pas au modèle actuel
+    model_data = auto_train_if_needed(df_hist)
     model = model_data["model"]
     feature_cols = model_data["features"]
 
-    # Charger les données historiques pour calculer les lags
-    df_hist = load_ventes(use_case=use_case, filepath=filepath)
-
-    # Calculer la moyenne récente (référence)
+    # Moyenne récente comme référence
     moyenne_recente = df_hist["montant_total"].tail(30).mean()
 
-    # Générer les dates futures
+    # Dates futures
     derniere_date = df_hist["date"].max()
     dates_futures = pd.date_range(
         start=derniere_date + timedelta(days=1),
@@ -46,15 +52,11 @@ def predict_next_days(horizon=7, use_case="supermarche", filepath=None):
 
     predictions = []
 
-    for i, date_pred in enumerate(dates_futures):
-        # Construire un mini-DataFrame avec la date à prédire
+    for date_pred in dates_futures:
         row = pd.DataFrame({"date": [date_pred], "montant_total": [np.nan]})
-
-        # Concaténer avec l'historique pour calculer les features
         df_temp = pd.concat([df_hist, row], ignore_index=True)
         df_temp = build_features(df_temp, target_col="montant_total")
 
-        # Prendre la dernière ligne (celle qu'on prédit)
         if df_temp.empty:
             continue
 
@@ -68,12 +70,9 @@ def predict_next_days(horizon=7, use_case="supermarche", filepath=None):
         pred_montant = max(0, pred_montant)
 
         # Variation par rapport à la normale
-        variation = (pred_montant - moyenne_recente) / moyenne_recente
+        variation = (pred_montant - moyenne_recente) / moyenne_recente if moyenne_recente > 0 else 0
 
-        # Niveau d'alerte
         alerte = niveau_alerte(variation, seuils)
-
-        # Recommandations contextuelles
         message = _generer_message(variation, alerte, date_pred, use_case, config)
 
         predictions.append({
@@ -99,7 +98,7 @@ def predict_next_days(horizon=7, use_case="supermarche", filepath=None):
 
 
 def predict_single_day(date_str, use_case="supermarche"):
-    """Prédit pour un seul jour donné. Retourne un dict JSON-ready."""
+    """Prédit pour un seul jour donné."""
     date_cible = pd.Timestamp(date_str)
     df_hist = load_ventes(use_case=use_case)
     derniere_date = df_hist["date"].max()
@@ -107,15 +106,15 @@ def predict_single_day(date_str, use_case="supermarche"):
     horizon = (date_cible - derniere_date).days
     if horizon <= 0:
         raise ValueError(
-            f"La date {date_str} est dans le passé ou le présent. "
-            f"Dernière date disponible : {derniere_date.date()}"
+            f"La date {date_str} est dans le passe. "
+            f"Derniere date disponible : {derniere_date.date()}"
         )
 
     df_pred = predict_next_days(horizon=horizon, use_case=use_case)
     row = df_pred[df_pred["date"] == date_str]
 
     if row.empty:
-        raise ValueError(f"Impossible de prédire pour {date_str}")
+        raise ValueError(f"Impossible de predire pour {date_str}")
 
     return row.iloc[0].to_dict()
 

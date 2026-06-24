@@ -186,26 +186,31 @@ def main():
 
     # --- Sidebar ---
     st.sidebar.title("Configuration")
+
+    uploaded_file = st.sidebar.file_uploader(
+        "Importer vos donnees",
+        type=["csv", "xlsx", "xls", "json"],
+        help="Formats : CSV, Excel, JSON. Le systeme detecte automatiquement les colonnes."
+    )
+
+    if uploaded_file is not None:
+        st.sidebar.success(f"Fichier charge : {uploaded_file.name}")
+
+    st.sidebar.divider()
+
     use_case = st.sidebar.selectbox(
-        "Type de commerce",
+        "Type de commerce (pour les recommandations)",
         ["supermarche", "restaurant", "mobile_money", "grossiste"],
         format_func=lambda x: {
             "supermarche": "Supermarche / Grande Surface",
             "restaurant": "Restaurant / Fast Food",
             "mobile_money": "Telephonie / Mobile Money",
             "grossiste": "Grossiste / Distributeur",
-        }[x]
+        }[x],
+        help="Utilise uniquement pour adapter les recommandations (personnel, stock, etc.)"
     )
 
     horizon_jours = st.sidebar.slider("Horizon de prevision (jours)", 7, 30, 14)
-
-    st.sidebar.divider()
-
-    uploaded_file = st.sidebar.file_uploader(
-        "Importer vos propres donnees (CSV)",
-        type=["csv"],
-        help="Format attendu : colonnes 'date', 'montant_total', 'nb_transactions'"
-    )
 
     st.sidebar.divider()
 
@@ -216,40 +221,60 @@ def main():
                 f"Modele entraine ! MAPE = {metrics['mape']:.1f}%"
             )
 
-    # --- Vérifier que le modèle existe ---
+    # --- Vérifier que le modèle existe (sauf si fichier uploadé → auto-train) ---
     model_path = MODELS_DIR / "xgboost_model.pkl"
-    if not model_path.exists():
+    if not model_path.exists() and uploaded_file is None:
         st.title("Prevision des Jours de Forte Vente")
         st.warning(
-            "Aucun modele entraine. Cliquez sur 'Reentrainer le modele' "
-            "dans la barre laterale pour commencer."
+            "Aucun modele entraine. Importez un fichier de donnees ou cliquez sur "
+            "'Reentrainer le modele' dans la barre laterale."
         )
         st.info(
-            "Si c'est votre premiere utilisation, assurez-vous d'avoir genere "
-            "les donnees synthetiques avec : `python data/synthetic/generate_data.py`"
+            "Le systeme s'adapte automatiquement : importez n'importe quel CSV "
+            "avec des dates et des montants, il se reentraine tout seul."
         )
         return
 
     # --- Page principale ---
     st.title("Prevision des Jours de Forte Vente")
 
-    # --- Chargement des prédictions avec indicateur stylé ---
-    filepath = uploaded_file if uploaded_file is not None else None
+    # --- Pré-charger les données uploadées (évite les problèmes de curseur file-like) ---
+    df_uploaded = None
+    if uploaded_file is not None:
+        uploaded_file.seek(0)
+        from src.data_loader import load_ventes as _load
+        try:
+            df_uploaded = _load(filepath=uploaded_file)
+        except Exception as e:
+            st.error(f"Impossible de lire le fichier : {e}")
+            return
 
     loading_placeholder = st.empty()
 
     with loading_placeholder.container():
-        show_loading(
-            message="Calcul des previsions en cours",
-            detail=f"Analyse de {horizon_jours} jours pour {use_case.replace('_', ' ')}..."
-        )
+        if df_uploaded is not None:
+            show_loading(
+                message="Adaptation du modele a vos donnees",
+                detail=f"Detection OK — {len(df_uploaded)} jours trouves. Entrainement en cours..."
+            )
+        else:
+            show_loading(
+                message="Calcul des previsions en cours",
+                detail=f"Analyse de {horizon_jours} jours pour {use_case.replace('_', ' ')}..."
+            )
 
     try:
-        df_forecast = predict_next_days(
-            horizon=horizon_jours,
-            use_case=use_case,
-            filepath=filepath,
-        )
+        if df_uploaded is not None:
+            df_forecast = predict_next_days(
+                horizon=horizon_jours,
+                use_case=use_case,
+                df_input=df_uploaded,
+            )
+        else:
+            df_forecast = predict_next_days(
+                horizon=horizon_jours,
+                use_case=use_case,
+            )
     except Exception as e:
         loading_placeholder.empty()
         st.error(f"Erreur de prediction : {e}")
@@ -337,8 +362,8 @@ def main():
     st.divider()
     st.subheader("Historique des ventes")
 
-    df_hist = load_ventes(use_case=use_case)
-    jours_hist = st.slider("Nombre de jours d'historique", 30, 365, 90)
+    df_hist = df_uploaded if df_uploaded is not None else load_ventes(use_case=use_case)
+    jours_hist = st.slider("Nombre de jours d'historique", 30, min(len(df_hist), 365), min(90, len(df_hist)))
     df_hist_recent = df_hist.tail(jours_hist)
 
     fig_hist = go.Figure()

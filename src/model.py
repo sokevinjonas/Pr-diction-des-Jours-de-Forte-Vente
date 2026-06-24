@@ -1,9 +1,9 @@
 """
 Entraînement et évaluation des modèles de prédiction.
-Modèle principal : XGBoost (rapide, interprétable, léger en production).
-Modèle alternatif : Prophet (si peu de features disponibles).
+Modèle auto-adaptatif : se réentraîne automatiquement quand les données changent.
 """
 
+import hashlib
 import numpy as np
 import pandas as pd
 import joblib
@@ -24,34 +24,63 @@ MODELS_DIR = PROJECT_ROOT / "models"
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _data_fingerprint(df):
+    """Crée une empreinte des données pour détecter les changements."""
+    info = f"{len(df)}_{df['montant_total'].mean():.0f}_{df['montant_total'].std():.0f}_{df['date'].min()}_{df['date'].max()}"
+    return hashlib.md5(info.encode()).hexdigest()[:12]
+
+
+def _model_is_compatible(df):
+    """Vérifie si le modèle sauvegardé est compatible avec les données actuelles."""
+    model_path = MODELS_DIR / "xgboost_model.pkl"
+    if not model_path.exists():
+        return False
+
+    model_data = joblib.load(model_path)
+    saved_fingerprint = model_data.get("data_fingerprint")
+    current_fingerprint = _data_fingerprint(df)
+
+    if saved_fingerprint != current_fingerprint:
+        return False
+
+    return True
+
+
 def train_xgboost(df, target_col="montant_total", save=True):
     """
     Entraîne un modèle XGBoost avec validation temporelle.
-    Retourne le modèle, les métriques et l'importance des features.
+    S'adapte automatiquement à la taille et la structure des données.
     """
-    config = load_config()
-    test_year = config["model"].get("test_year", 2024)
-
     feature_cols = get_feature_columns()
     features_disponibles = [c for c in feature_cols if c in df.columns]
 
     X = df[features_disponibles]
     y = df[target_col]
 
-    # Split temporel : tout sauf la dernière année pour l'entraînement
-    mask_train = df["date"].dt.year < test_year
-    mask_test = df["date"].dt.year >= test_year
+    # Split temporel adaptatif : les 20% les plus récents pour le test
+    split_idx = int(len(df) * 0.8)
+    X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
+    y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
 
-    X_train, X_test = X[mask_train], X[mask_test]
-    y_train, y_test = y[mask_train], y[mask_test]
-
-    # Validation croisée temporelle pour le tuning
-    tscv = TimeSeriesSplit(n_splits=4)
+    # Adapter les hyperparamètres à la taille des données
+    n_samples = len(X_train)
+    if n_samples < 100:
+        n_estimators = 100
+        max_depth = 3
+        learning_rate = 0.1
+    elif n_samples < 500:
+        n_estimators = 300
+        max_depth = 5
+        learning_rate = 0.06
+    else:
+        n_estimators = 600
+        max_depth = 6
+        learning_rate = 0.04
 
     model = xgb.XGBRegressor(
-        n_estimators=600,
-        learning_rate=0.04,
-        max_depth=6,
+        n_estimators=n_estimators,
+        learning_rate=learning_rate,
+        max_depth=max_depth,
         subsample=0.8,
         colsample_bytree=0.8,
         min_child_weight=5,
@@ -61,7 +90,6 @@ def train_xgboost(df, target_col="montant_total", save=True):
         n_jobs=-1,
     )
 
-    # Early stopping avec validation
     model.fit(
         X_train, y_train,
         eval_set=[(X_test, y_test)],
@@ -70,16 +98,19 @@ def train_xgboost(df, target_col="montant_total", save=True):
 
     # Métriques sur le jeu de test
     y_pred = model.predict(X_test)
-    metrics = compute_metrics(y_test, y_pred, df[mask_test], target_col)
+    metrics = compute_metrics(y_test, y_pred, df.iloc[split_idx:], target_col)
 
-    # Validation croisée pour estimer la variance
+    # Validation croisée
+    n_splits = min(4, max(2, n_samples // 100))
+    tscv = TimeSeriesSplit(n_splits=n_splits)
     cv_scores = []
     for train_idx, val_idx in tscv.split(X_train):
         X_cv_train, X_cv_val = X_train.iloc[train_idx], X_train.iloc[val_idx]
         y_cv_train, y_cv_val = y_train.iloc[train_idx], y_train.iloc[val_idx]
 
         model_cv = xgb.XGBRegressor(
-            n_estimators=300, learning_rate=0.05, max_depth=6,
+            n_estimators=min(300, n_estimators),
+            learning_rate=0.05, max_depth=max_depth,
             random_state=42, n_jobs=-1,
         )
         model_cv.fit(X_cv_train, y_cv_train, verbose=False)
@@ -101,9 +132,38 @@ def train_xgboost(df, target_col="montant_total", save=True):
             "model": model,
             "features": features_disponibles,
             "metrics": metrics,
+            "data_fingerprint": _data_fingerprint(df),
+            "data_stats": {
+                "mean": float(df[target_col].mean()),
+                "std": float(df[target_col].std()),
+                "n_rows": len(df),
+                "date_min": str(df["date"].min().date()),
+                "date_max": str(df["date"].max().date()),
+            },
         }, model_path)
 
     return model, metrics, importance
+
+
+def auto_train_if_needed(df):
+    """
+    Vérifie si le modèle existant est compatible avec les données.
+    Si non, réentraîne automatiquement. Retourne le modèle prêt.
+    """
+    if _model_is_compatible(df):
+        return joblib.load(MODELS_DIR / "xgboost_model.pkl")
+
+    # Réentraînement automatique
+    df_features = build_features(df)
+
+    if len(df_features) < 30:
+        raise ValueError(
+            f"Pas assez de donnees pour entrainer un modele ({len(df_features)} jours). "
+            f"Minimum requis : 30 jours."
+        )
+
+    train_xgboost(df_features, save=True)
+    return joblib.load(MODELS_DIR / "xgboost_model.pkl")
 
 
 def compute_metrics(y_true, y_pred, df_test=None, target_col="montant_total"):
@@ -114,7 +174,6 @@ def compute_metrics(y_true, y_pred, df_test=None, target_col="montant_total"):
         "rmse": np.sqrt(mean_squared_error(y_true, y_pred)),
     }
 
-    # Accuracy de détection des pics (+30%)
     if df_test is not None and len(df_test) > 30:
         moy_30j = df_test[target_col].rolling(30, min_periods=7).mean()
         seuil_pic = 0.30
@@ -122,7 +181,6 @@ def compute_metrics(y_true, y_pred, df_test=None, target_col="montant_total"):
         vrais_pics = (y_true.values > moy_30j.values * (1 + seuil_pic))
         preds_pics = (y_pred > moy_30j.values * (1 + seuil_pic))
 
-        # Exclure les NaN du rolling
         mask_valid = ~np.isnan(moy_30j.values)
         if mask_valid.sum() > 0:
             vrais_pics = vrais_pics[mask_valid]
@@ -148,15 +206,15 @@ def load_trained_model(use_case="supermarche"):
     model_path = MODELS_DIR / "xgboost_model.pkl"
     if not model_path.exists():
         raise FileNotFoundError(
-            f"Aucun modèle trouvé. Lancez d'abord l'entraînement."
+            "Aucun modele trouve. Lancez d'abord l'entrainement."
         )
     return joblib.load(model_path)
 
 
-def train_pipeline(use_case="supermarche"):
+def train_pipeline(use_case="supermarche", filepath=None):
     """Pipeline complet : chargement → features → entraînement → sauvegarde."""
     print(f"[1/3] Chargement des donnees ({use_case})...")
-    df = load_ventes(use_case=use_case)
+    df = load_ventes(use_case=use_case, filepath=filepath)
 
     print("[2/3] Feature engineering...")
     df = build_features(df)
